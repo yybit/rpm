@@ -1,4 +1,4 @@
-use std::io;
+use std::{io, str::Utf8Error};
 
 use thiserror::Error;
 
@@ -56,18 +56,30 @@ pub enum Error {
     #[error("signature packet not found in what is supposed to be a signature")]
     NoSignatureFound,
 
+    #[cfg(feature = "signature-pgp")]
     #[error("error creating signature: {0}")]
-    SignError(Box<dyn std::error::Error>),
+    SignError(#[source] pgp::errors::Error),
 
-    #[error("error parsing key - {details}. underlying error was: {source}")]
-    KeyLoadError {
-        source: Box<dyn std::error::Error>,
-        details: &'static str,
-    },
+    #[error("error parsing keys, failed to parse bytes as utf8 for ascii armored parsing")]
+    KeyLoadUtf8Error(
+        #[from]
+        #[source]
+        Utf8Error,
+    ),
 
+    #[cfg(feature = "signature-pgp")]
+    #[error("errors parsing keys, failed to parse bytes as ascii armored key")]
+    KeyLoadSecretKeyError(
+        #[from]
+        #[source]
+        pgp::errors::Error,
+    ),
+
+    #[cfg(feature = "signature-pgp")]
     #[error("error verifying signature with key {key_ref}: {source}")]
     VerificationError {
-        source: Box<dyn std::error::Error>,
+        #[source]
+        source: pgp::errors::Error,
         key_ref: String,
     },
 
@@ -113,3 +125,9 @@ impl From<TimestampError> for Error {
         Error::TimestampConv(error)
     }
 }
+
+// Assert at compile-time that Error implements Send and Sync.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<Error>();
+};
